@@ -27,7 +27,7 @@ def run_git(cmd):
 def choose(title, description, solution, options):
     print(f"\n❗ {title}")
     print(f"{description}\n")
-    print(f"💡 Решение:\n{solution}\n")
+    print(f"💡 Пояснение:\n{solution}\n")
     for i, opt in enumerate(options, 1):
         print(f"{i}. {opt}")
     while True:
@@ -49,6 +49,153 @@ def detect_branch():
     return "main"
 
 
+# ===== HISTORY =====
+
+def show_recent_commits():
+    print("\n📜 Последние 10 коммитов:\n")
+    ok, out = run_git("git log --oneline -10")
+    if not ok or not out.strip():
+        print("❌ Не удалось получить историю коммитов")
+        wait_for_enter()
+
+    commits = []
+    for i, line in enumerate(out.strip().splitlines(), 1):
+        print(f"{i}. {line}")
+        commits.append(line.split()[0])
+
+    return commits
+
+
+# ===== FORCE PUSH =====
+
+def offer_force_push(branch):
+    confirm = input(
+        f"\n⚠️ История ветки была изменена.\n"
+        f"Разрешить git push --force-with-lease в ветку '{branch}'?\n"
+        f"Введите YES для подтверждения: "
+    )
+    if confirm == "YES":
+        ok, out = run_git(f"git push --force-with-lease origin {branch}")
+        if ok:
+            print("✅ Force-push выполнен успешно")
+        else:
+            print("❌ Ошибка force-push:\n", out)
+    else:
+        print("ℹ️ Force-push отменён")
+
+
+# ===== ROLLBACK =====
+
+def rollback_menu(commits, branch):
+    mode = choose(
+        "Профессиональный откат Git",
+        "Ты собираешься откатить репозиторий к предыдущему состоянию.",
+        (
+            "1️⃣ reset --soft\n"
+            "Коммиты будут отменены.\n"
+            "Все изменения останутся ПОДГОТОВЛЕННЫМИ к коммиту.\n"
+            "Используй, если нужно изменить сообщение коммита.\n\n"
+
+            "2️⃣ reset --mixed (самый популярный вариант)\n"
+            "Коммиты будут отменены.\n"
+            "Изменения останутся в файлах, но НЕ будут добавлены.\n"
+            "Используй, если нужно доработать код.\n\n"
+
+            "3️⃣ reset --hard ⚠️ ОПАСНО\n"
+            "Коммиты и все изменения в файлах будут УДАЛЕНЫ БЕЗВОЗВРАТНО.\n"
+            "Используй только если уверен на 100%.\n\n"
+
+            "4️⃣ revert (БЕЗОПАСНО)\n"
+            "История НЕ переписывается.\n"
+            "Создаётся новый коммит, отменяющий выбранный.\n"
+            "Рекомендуется для GitHub и совместной работы."
+        ),
+        [
+            "reset --soft",
+            "reset --mixed",
+            "reset --hard",
+            "revert (безопасно)"
+        ]
+    )
+
+    num = input("\nВведите номер строки коммита (1–10): ").strip()
+    if not num.isdigit() or not (1 <= int(num) <= len(commits)):
+        print("❌ Неверный номер")
+        wait_for_enter()
+
+    commit = commits[int(num) - 1]
+    did_reset = False
+
+    if mode == 1:
+        run_git(f"git reset --soft {commit}")
+        did_reset = True
+
+    elif mode == 2:
+        run_git(f"git reset --mixed {commit}")
+        did_reset = True
+
+    elif mode == 3:
+        if input("Введите YES для подтверждения HARD RESET: ") != "YES":
+            wait_for_enter()
+        run_git(f"git reset --hard {commit}")
+        did_reset = True
+
+    elif mode == 4:
+        run_git(f"git revert {commit}")
+        wait_for_enter()
+
+    if did_reset:
+        offer_force_push(branch)
+
+    wait_for_enter()
+
+
+# ===== EDIT COMMIT MESSAGE =====
+
+def edit_commit_message(commits):
+    print(
+        "\n⚠️ ВАЖНО:\n"
+        "Изменять комментарий БЕЗОПАСНО можно ТОЛЬКО у ПОСЛЕДНЕГО (HEAD) коммита.\n"
+        "Любые другие коммиты требуют интерактивный rebase.\n"
+    )
+
+    print(
+        "Если выбран НЕ последний коммит:\n"
+        "Git откроет редактор со списком коммитов.\n"
+        "Ты сам управляешь историей.\n\n"
+
+        "Основные команды rebase:\n"
+        "pick    — оставить коммит как есть\n"
+        "reword  — изменить сообщение коммита (или r)\n"
+        "squash  — объединить с предыдущим (или s)\n"
+        "drop    — удалить коммит\n\n"
+
+        "ВАЖНО:\n"
+        "Если что-то пошло не так — выполни:\n"
+        "git rebase --abort\n"
+        "и история вернётся в исходное состояние.\n"
+    )
+
+    num = input("Введите номер строки коммита (1–10): ").strip()
+    if not num.isdigit() or not (1 <= int(num) <= len(commits)):
+        wait_for_enter()
+
+    if int(num) == 1:
+        print("\n✏️ Изменение сообщения HEAD-коммита\n")
+        run_git("git commit --amend")
+        wait_for_enter()
+    else:
+        print(
+            "\n🔧 Будет выполнен интерактивный rebase:\n"
+            "git rebase -i HEAD~10\n\n"
+            "Найди нужный коммит и замени 'pick' на 'reword'\n"
+        )
+        run_git("git rebase -i HEAD~10")
+        wait_for_enter()
+
+
+# ===== MAIN =====
+
 def main():
     print("\n🧠 Smart Git Helper — PROD\n")
     log("=== START ===")
@@ -58,7 +205,19 @@ def main():
         wait_for_enter()
 
     branch = detect_branch()
-    log(f"Branch: {branch}")
+    commits = show_recent_commits()
+
+    print("\nENTER — продолжить обычную работу")
+    print("0     — профессиональный откат")
+    print("9     — изменить комментарий коммита\n")
+
+    action = input("Выбор: ").strip()
+
+    if action == "0":
+        rollback_menu(commits, branch)
+
+    if action == "9":
+        edit_commit_message(commits)
 
     msg = input("Введите сообщение коммита: ").strip()
     if not msg:
@@ -198,7 +357,6 @@ def main():
                 ["Выйти"]
             )
             wait_for_enter()
-
 
 if __name__ == "__main__":
     main()
