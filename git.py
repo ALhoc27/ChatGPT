@@ -333,7 +333,7 @@ def main():
         - где твоя main
         - где origin/main
         - кто «впереди», кто «позади»""",
-                solution=None,  # нет "правильного" ответа, просто выбор
+                description="",  # добавлено, чтобы satisfy сигнатуру choose()
                 options=[
                     "git log --oneline --graph --decorate --all -5  📜 показать последние коммиты",
                     "git push --force  ⚠️ перезаписать GitHub локальным состоянием",
@@ -342,37 +342,38 @@ def main():
                 ]
             )
 
-        # Обработка выбора пользователя
-        if c == 1:
-            print("📜 Показываем последние коммиты (лог графа)...")
-            run_git("git log --oneline --graph --decorate --all -5")
-            wait_for_enter()
-        elif c == 2:
-            print("⚠️ Перезаписываем GitHub своим состоянием...")
-            ok, _ = run_git("git push --force")
-            if ok:
-                print("✅ GitHub теперь точно копия локального репозитория.")
-            else:
-                print("❌ Ошибка при push --force!")
-            wait_for_enter()
-        elif c == 3:
-            print("🔄 Подтягиваем изменения с GitHub и пушим...")
-            ok, _ = run_git("git pull --rebase")
-            if not ok:
-                print("⚠️ Конфликт. Исправь вручную.")
-            else:
-                run_git("git push")
-                print("✅ Изменения успешно синхронизированы с GitHub.")
-            wait_for_enter()
-        elif c == 4:
-            print("💥 Применяем жёсткий сброс и rebase...")
-            ok, _ = run_git("git reset --hard")
-            if ok:
-                run_git("git rebase")
-                print("✅ Локальная история обновлена и выровнена.")
-            else:
-                print("❌ Ошибка при reset --hard!")
-            wait_for_enter()
+            # Обработка выбора пользователя
+            if c == 1:
+                print("📜 Показываем последние коммиты (лог графа)...")
+                run_git("git log --oneline --graph --decorate --all -5")
+                wait_for_enter()
+            elif c == 2:
+                print("⚠️ Перезаписываем GitHub своим состоянием...")
+                ok, _ = run_git("git push --force")
+                if ok:
+                    print("✅ GitHub теперь точно копия локального репозитория.")
+                else:
+                    print("❌ Ошибка при push --force!")
+                wait_for_enter()
+            elif c == 3:
+                print("🔄 Подтягиваем изменения с GitHub и пушим...")
+                ok, _ = run_git("git pull --rebase")
+                if not ok:
+                    print("⚠️ Конфликт. Исправь вручную.")
+                else:
+                    run_git("git push")
+                    print("✅ Изменения успешно синхронизированы с GitHub.")
+                wait_for_enter()
+            elif c == 4:
+                print("💥 Применяем жёсткий сброс и rebase...")
+                ok, _ = run_git("git reset --hard")
+                if ok:
+                    run_git("git rebase")
+                    print("✅ Локальная история обновлена и выровнена.")
+                else:
+                    print("❌ Ошибка при reset --hard!")
+                wait_for_enter()
+
 
 
         elif "refusing to merge unrelated histories" in low:
