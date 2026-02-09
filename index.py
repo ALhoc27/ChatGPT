@@ -87,6 +87,72 @@ def extract_chat(page):
             role = "user"
 
         blocks = []
+
+        # ✅ ТОЛЬКО верхний уровень
+        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=False):
+
+            # ---------- IMG ----------
+            if el.name == "img" and el.get("src"):
+                blocks.append(f"![]({download_image(el['src'])})")
+
+            # ---------- CODE ----------
+            elif el.name == "pre":
+                code_el = el.find("code")
+                if not code_el:
+                    continue
+
+                code = code_el.get_text().rstrip()
+
+                lang = ""
+                for c in code_el.get("class", []):
+                    if c.startswith("language-"):
+                        lang = c.replace("language-", "")
+                        break
+
+                blocks.append(f"```{lang}\n{code}\n```")
+
+            # ---------- LIST ----------
+            elif el.name in ("ul", "ol"):
+                for li in el.find_all("li", recursive=False):
+                    blocks.append(f"- {li.get_text(' ', strip=True)}")
+
+            # ---------- TEXT ----------
+            elif el.name == "p":
+                text = el.get_text(" ", strip=True)
+                if text:
+                    blocks.append(text)
+
+        if not blocks:
+            continue
+
+        text = "\n\n".join(blocks)
+
+        if role == last_role:
+            buffer.append(text)
+        else:
+            if buffer:
+                messages.append((last_role, "\n\n".join(buffer)))
+            buffer = [text]
+            last_role = role
+
+    if buffer:
+        messages.append((last_role, "\n\n".join(buffer)))
+
+    return messages
+
+
+    soup = BeautifulSoup(page.content(), "html.parser")
+
+    messages = []
+    last_role = None
+    buffer = []
+
+    for article in soup.select("article"):
+        role = "assistant"
+        if article.find("h5") and "You" in article.get_text():
+            role = "user"
+
+        blocks = []
         seen_blocks = set()  # 🔧 дедупликация
 
         for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=True):
