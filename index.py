@@ -59,6 +59,9 @@ def download_image(src):
     if CURRENT_CACHE_DIR is None:
         return src
 
+    # гарантируем существование папок ТОЛЬКО при реальной загрузке
+    os.makedirs(CURRENT_CACHE_DIR, exist_ok=True)
+
     ext = os.path.splitext(urlparse(src).path)[1] or ".png"
     name = hashlib.md5(src.encode()).hexdigest()[:12] + ext
     path = os.path.join(CURRENT_CACHE_DIR, name)
@@ -75,155 +78,6 @@ def download_image(src):
 
 
 def extract_chat(page):
-    soup = BeautifulSoup(page.content(), "html.parser")
-
-    messages = []
-    last_role = None
-    buffer = []
-
-    for article in soup.select("article"):
-        role = "assistant"
-        if article.find("h5") and "You" in article.get_text():
-            role = "user"
-
-        blocks = []
-
-        # ✅ ТОЛЬКО верхний уровень
-        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=False):
-
-            # ---------- IMG ----------
-            if el.name == "img" and el.get("src"):
-                blocks.append(f"![]({download_image(el['src'])})")
-
-            # ---------- CODE ----------
-            elif el.name == "pre":
-                code_el = el.find("code")
-                if not code_el:
-                    continue
-
-                code = code_el.get_text().rstrip()
-
-                lang = ""
-                for c in code_el.get("class", []):
-                    if c.startswith("language-"):
-                        lang = c.replace("language-", "")
-                        break
-
-                blocks.append(f"```{lang}\n{code}\n```")
-
-            # ---------- LIST ----------
-            elif el.name in ("ul", "ol"):
-                for li in el.find_all("li", recursive=False):
-                    blocks.append(f"- {li.get_text(' ', strip=True)}")
-
-            # ---------- TEXT ----------
-            elif el.name == "p":
-                text = el.get_text(" ", strip=True)
-                if text:
-                    blocks.append(text)
-
-        if not blocks:
-            continue
-
-        text = "\n\n".join(blocks)
-
-        if role == last_role:
-            buffer.append(text)
-        else:
-            if buffer:
-                messages.append((last_role, "\n\n".join(buffer)))
-            buffer = [text]
-            last_role = role
-
-    if buffer:
-        messages.append((last_role, "\n\n".join(buffer)))
-
-    return messages
-
-
-    soup = BeautifulSoup(page.content(), "html.parser")
-
-    messages = []
-    last_role = None
-    buffer = []
-
-    for article in soup.select("article"):
-        role = "assistant"
-        if article.find("h5") and "You" in article.get_text():
-            role = "user"
-
-        blocks = []
-        seen_blocks = set()  # 🔧 дедупликация
-
-        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=True):
-
-            # ---------- IMG ----------
-            if el.name == "img" and el.get("src"):
-                block = f"![]({download_image(el['src'])})"
-
-            # ---------- CODE ----------
-            elif el.name == "pre":
-                code_el = el.find("code")
-                if not code_el:
-                    continue
-
-                # 🔧 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
-                # собираем код без \n между span
-                code = "".join(code_el.stripped_strings)
-
-                # язык берём ТОЛЬКО у <code>
-                lang = ""
-                for c in code_el.get("class", []):
-                    if c.startswith("language-"):
-                        lang = c.replace("language-", "")
-                        break
-
-                block = f"```{lang}\n{code}\n```"
-
-            # ---------- LIST ----------
-            elif el.name in ("ul", "ol"):
-                for li in el.find_all("li", recursive=False):
-                    text = li.get_text(" ", strip=True)
-                    block = f"- {text}"
-                    if block not in seen_blocks:
-                        blocks.append(block)
-                        seen_blocks.add(block)
-                continue
-
-            # ---------- TEXT ----------
-            elif el.name == "p":
-                text = el.get_text(" ", strip=True)
-                if not text:
-                    continue
-                block = text
-
-            else:
-                continue
-
-            # 🔧 дедупликация ВСЕГО
-            if block not in seen_blocks:
-                blocks.append(block)
-                seen_blocks.add(block)
-
-        if not blocks:
-            continue
-
-        text = "\n\n".join(blocks)
-
-        if role == last_role:
-            buffer.append(text)
-        else:
-            if buffer:
-                messages.append((last_role, "\n\n".join(buffer)))
-            buffer = [text]
-            last_role = role
-
-    if buffer:
-        messages.append((last_role, "\n\n".join(buffer)))
-
-    return messages
-
-
     soup = BeautifulSoup(page.content(), "html.parser")
 
     messages = []
@@ -293,11 +147,7 @@ def format_md(messages, title, source_url):
     ]
 
     for role, text in messages:
-        if role == "user":
-            out.append("## 🧑 You")
-        else:
-            out.append("## 🤖 ChatGPT")
-
+        out.append("## 🧑 You" if role == "user" else "## 🤖 ChatGPT")
         out.append("")
         out.append(text.strip())
         out.append("")
@@ -333,26 +183,25 @@ def main():
 
             print("📥 Экспортируем...")
             title = get_chat_title(page)
-            messages = extract_chat(page)
 
+            # ⬇️ КРИТИЧНО: инициализация ДО парсинга
             global CURRENT_CHAT_SLUG, CURRENT_CACHE_DIR, DOWNLOADED_FILES
             DOWNLOADED_FILES = []
 
             ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
             safe_title = re.sub(r"[\\/:*?\"<>|]", "", title)
             CURRENT_CHAT_SLUG = f"{safe_title}_{ts}"
+            CURRENT_CACHE_DIR = os.path.join(ASSETS_ROOT, CURRENT_CHAT_SLUG)
+
+            messages = extract_chat(page)
 
             md_path = os.path.join(MD_DIR, f"{CURRENT_CHAT_SLUG}.md")
-
-            CURRENT_CACHE_DIR = os.path.join(ASSETS_ROOT, CURRENT_CHAT_SLUG)
-            os.makedirs(CURRENT_CACHE_DIR, exist_ok=True)
-
             md_text = format_md(messages, title, chat_url)
 
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(md_text)
 
-            # если ассетов нет — чистим
+            # если ассетов нет — чистим всё дерево
             if not DOWNLOADED_FILES:
                 if os.path.exists(os.path.join(MD_DIR, "ChatGPT_0x")):
                     shutil.rmtree(os.path.join(MD_DIR, "ChatGPT_0x"))
