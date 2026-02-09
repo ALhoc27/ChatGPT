@@ -291,18 +291,88 @@ def main():
 
         elif "rejected" in low or "behind" in low:
             c = choose(
-                "Удалённый репозиторий новее",
-                "На GitHub есть коммиты, которых нет локально.",
-                "Подтянуть изменения и повторить push.",
-                ["git pull --rebase", "Отмена"]
+                """👉 GitHub говорит тебе:
+            В твоей ветке на сервере есть коммиты, которых у тебя локально нет.
+            Я не дам тебе просто так их перезаписать.
+
+            То есть:
+            удалённый репозиторий новее
+            твоя локальная ветка отстаёт
+            обычный git push запрещён (чтобы ты случайно не потерял чужие коммиты)
+
+            С высокой вероятностью ты раньше делал одно из этих действий:
+            git reset --hard
+            git rebase
+            локальная история ≠ история на GitHub
+            Git видит разные цепочки коммитов
+            ТИПО 👉 «Сначала подтяни изменения с сервера, потом пушь»
+
+            ДВА правильных варианта (выбирай осознанно)
+            ✅ Вариант 1. Сохранить коммиты на GitHub (безопасно)
+            Если ты не хочешь удалять то, что уже есть на GitHub:
+            git pull --rebase
+            git push
+            Что будет:
+            - коммиты с GitHub подтянутся
+            - твои изменения «переиграются» поверх них
+            - история станет линейной
+            👉 Рекомендуется, если ты не уверен.
+
+            ⚠️ Вариант 2. Перезаписать GitHub своим состоянием
+            Если ты точно знаешь, что:
+            - репозиторий твой
+            - коммиты на GitHub больше не нужны
+            git push --force
+            Что будет:
+            - GitHub станет точной копией твоего локального состояния
+            - коммиты, которых нет локально, исчезнут
+
+            Как понять, что именно расходится
+            git log --oneline --graph --decorate --all -5
+            Ты увидишь:
+            - где твоя main
+            - где origin/main
+            - кто «впереди», кто «позади»""",
+                [
+                    "git log --oneline --graph --decorate --all -5",
+                    "git push --force",
+                    "git pull --rebase\ngit push",
+                    "git reset --hard\ngit rebase"
+                ]
             )
-            if c == 1:
-                ok, _ = run_git("git pull --rebase")
-                if not ok:
-                    print("⚠️ Конфликт. Исправь вручную.")
-                    wait_for_enter()
+
+        # Обработка выбора пользователя
+        if c == 1:
+            print("📜 Показываем последние коммиты (лог графа)...")
+            run_git("git log --oneline --graph --decorate --all -5")
+            wait_for_enter()
+        elif c == 2:
+            print("⚠️ Перезаписываем GitHub своим состоянием...")
+            ok, _ = run_git("git push --force")
+            if ok:
+                print("✅ GitHub теперь точно копия локального репозитория.")
             else:
-                wait_for_enter()
+                print("❌ Ошибка при push --force!")
+            wait_for_enter()
+        elif c == 3:
+            print("🔄 Подтягиваем изменения с GitHub и пушим...")
+            ok, _ = run_git("git pull --rebase")
+            if not ok:
+                print("⚠️ Конфликт. Исправь вручную.")
+            else:
+                run_git("git push")
+                print("✅ Изменения успешно синхронизированы с GitHub.")
+            wait_for_enter()
+        elif c == 4:
+            print("💥 Применяем жёсткий сброс и rebase...")
+            ok, _ = run_git("git reset --hard")
+            if ok:
+                run_git("git rebase")
+                print("✅ Локальная история обновлена и выровнена.")
+            else:
+                print("❌ Ошибка при reset --hard!")
+            wait_for_enter()
+
 
         elif "refusing to merge unrelated histories" in low:
             choose(
