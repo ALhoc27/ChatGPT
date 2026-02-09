@@ -154,3 +154,30 @@ ee3cdb5 пробуем ИСПРАВЛЕННЫЙ extract_chat [2026-02-09 21:51]
 9cde08f сейчас все экспортируется но форматирование говяное
 cebd9e1 vault backup: 2026-02-09 15:16:54
 [2026-02-09 23:22:01] >>> git add .
+[2026-02-09 23:22:01] 
+[2026-02-09 23:22:01] >>> git commit -m "1 [2026-02-09 23:22]"
+[2026-02-09 23:22:01] [main 47de75b] 1 [2026-02-09 23:22]
+ 2 files changed, 60 insertions(+), 32 deletions(-)
+[2026-02-09 23:22:01] >>> git push origin main
+[2026-02-09 23:22:03] To github.com:ALhoc27/ChatGPT.git
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to 'github.com:ALhoc27/ChatGPT.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+[2026-02-09 23:22:23] === START ===
+[2026-02-09 23:22:23] >>> git branch --show-current
+[2026-02-09 23:22:23] main
+[2026-02-09 23:22:23] >>> git log --oneline -10
+[2026-02-09 23:22:23] 47de75b 1 [2026-02-09 23:22]
+ac9e995 1 [2026-02-09 23:19]
+ddf791f 1 [2026-02-09 23:19]
+8105d14 1 [2026-02-09 23:13]
+2623575 1 [2026-02-09 23:12]
+033f351 создал 1.тхт [2026-02-09 22:54]
+ee3cdb5 пробуем ИСПРАВЛЕННЫЙ extract_chat [2026-02-09 21:51]
+598530e тест [2026-02-09 15:41]
+517407b тест гит.py [2026-02-09 15:38]
+9cde08f сейчас все экспортируется но форматирование говяное
+[2026-02-09 23:22:37] >>> git add .
