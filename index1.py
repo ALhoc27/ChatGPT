@@ -79,28 +79,26 @@ def extract_chat(page):
     last_role = None
     buffer = []
 
-    for article in soup.select("article"):
-        role = "assistant"
-        if article.find("h5") and "You" in article.get_text():
-            role = "user"
+    # ✅ АКТУАЛЬНЫЙ СЕЛЕКТОР CHATGPT
+    for article in soup.select("div[data-message-author-role]"):
+
+        # ✅ роль берём напрямую из DOM
+        role = article.get("data-message-author-role", "assistant")
 
         blocks = []
 
-        # ❗ recursive=False — чтобы не было дублей
+        # ❗ без рекурсии — чтобы не было дублей
         for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=False):
 
             if el.name == "img" and el.get("src"):
                 blocks.append(f"![]({download_image(el['src'])})")
 
             elif el.name == "pre":
-                # ✅ БЕРЁМ CODE ВНУТРИ PRE
                 code_el = el.find("code")
                 if not code_el:
                     continue
 
                 code = code_el.get_text("\n", strip=False)
-
-                # ✅ убираем react-переносы
                 code = re.sub(r"\n{2,}", "\n", code)
 
                 lang = ""
@@ -115,7 +113,6 @@ def extract_chat(page):
                     blocks.append(f"- {li.get_text(' ', strip=True)}")
 
             elif el.name == "p":
-                # ✅ пробелы сохраняем
                 text = el.get_text(" ", strip=True)
                 if text:
                     blocks.append(text)
@@ -154,11 +151,7 @@ def format_md(messages, title, source_url):
     ]
 
     for role, text in messages:
-        if role == "user":
-            out.append("## 🧑 You")
-        else:
-            out.append("## 🤖 ChatGPT")
-
+        out.append("## 🧑 You" if role == "user" else "## 🤖 ChatGPT")
         out.append("")
         out.append(text.strip())
         out.append("")
@@ -195,6 +188,8 @@ def main():
             print("📥 Экспортируем...")
             title = get_chat_title(page)
             messages = extract_chat(page)
+
+            print(f"🧪 Найдено сообщений: {len(messages)}")
 
             global CURRENT_CHAT_SLUG, CURRENT_CACHE_DIR, DOWNLOADED_FILES
             DOWNLOADED_FILES = []
