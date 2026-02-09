@@ -1,6 +1,7 @@
 import subprocess
 from datetime import datetime
 import os
+import sys
 
 LOG_FILE = "git_smart_push.log"
 
@@ -10,22 +11,26 @@ def log(text):
         f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {text}\n")
 
 
+def wait_for_space():
+    print("\nНажмите ПРОБЕЛ для выхода...")
+    while True:
+        key = input()
+        if key == " ":
+            sys.exit(0)
+
+
 def run_git(cmd):
     log(f">>> {cmd}")
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        text=True,
-        capture_output=True
-    )
+    result = subprocess.run(cmd, shell=True, text=True, capture_output=True)
     output = (result.stdout + result.stderr).strip()
     log(output)
     return result.returncode == 0, output
 
 
-def choose(title, description, options):
+def choose(title, description, solution, options):
     print(f"\n❗ {title}")
-    print(description)
+    print(f"{description}\n")
+    print(f"💡 Решение:\n{solution}\n")
     for i, opt in enumerate(options, 1):
         print(f"{i}. {opt}")
     while True:
@@ -37,9 +42,8 @@ def choose(title, description, options):
 
 def detect_branch():
     ok, out = run_git("git branch --show-current")
-    if ok and out:
+    if ok and out.strip():
         return out.strip()
-
     ok, out = run_git("git branch")
     if "main" in out:
         return "main"
@@ -49,23 +53,22 @@ def detect_branch():
 
 
 def main():
-    print("\n🧠 Smart Git Helper (ultimate)\n")
+    print("\n🧠 Smart Git Helper — PROD\n")
     log("=== START ===")
 
     if not os.path.isdir(".git"):
         print("❌ Это не git-репозиторий (нет папки .git)")
-        log("Not a git repository")
-        return
+        wait_for_space()
 
     branch = detect_branch()
-    log(f"Using branch: {branch}")
+    log(f"Branch: {branch}")
 
-    user_msg = input("Введите сообщение коммита: ").strip()
-    if not user_msg:
-        print("❌ Сообщение не может быть пустым")
-        return
+    msg = input("Введите сообщение коммита: ").strip()
+    if not msg:
+        print("❌ Пустое сообщение коммита недопустимо")
+        wait_for_space()
 
-    commit_msg = f"{user_msg} [{datetime.now().strftime('%Y-%m-%d %H:%M')}]"
+    commit_msg = f"{msg} [{datetime.now().strftime('%Y-%m-%d %H:%M')}]"
     print(f"\n📝 Commit:\n{commit_msg}\n")
 
     run_git("git add .")
@@ -73,113 +76,131 @@ def main():
     ok, out = run_git(f'git commit -m "{commit_msg}"')
     if not ok and "nothing to commit" not in out.lower():
         print("❌ Ошибка коммита:\n", out)
-        return
+        wait_for_space()
 
     while True:
         ok, out = run_git(f"git push origin {branch}")
         if ok:
-            print("✅ Успешно отправлено")
-            log("SUCCESS")
-            return
+            print("✅ Push выполнен успешно")
+            wait_for_space()
 
         low = out.lower()
-        print("\n❌ Ошибка push:\n", out)
+        print("\n❌ Ошибка git push:\n", out)
 
-        # === ERROR HANDLERS ===
+        # ===== ERROR HANDLERS =====
 
         if "would be overwritten by merge" in low:
             c = choose(
-                "Локальные изменения мешают pull",
-                "Git не может обновиться, потому что файлы будут перезаписаны.",
-                ["Сохранить изменения (git stash)", "Отменить операцию"]
+                "Локальные изменения мешают обновлению",
+                "В рабочей директории есть изменения, которые Git боится перезаписать.",
+                "Сохранить изменения во временное хранилище (stash) или отменить операцию.",
+                ["git stash (рекомендуется)", "Отмена"]
             )
             if c == 1:
                 run_git("git stash")
             else:
-                return
+                wait_for_space()
 
-        elif "src refspec" in low:
+        elif "src refspec" in low or "bad revision 'head'" in low:
             c = choose(
-                "Ветка не существует",
-                "Git не нашёл ветку для push.",
-                ["Создать ветку и запушить", "Выйти"]
+                "Ветка не существует или нет коммитов",
+                "Git не может отправить ветку, потому что она ещё не создана.",
+                "Создать ветку и сделать push.",
+                ["Создать ветку и push", "Отмена"]
             )
             if c == 1:
                 run_git(f"git branch -M {branch}")
                 run_git(f"git push -u origin {branch}")
+                wait_for_space()
             else:
-                return
+                wait_for_space()
+
+        elif "repository not found" in low:
+            choose(
+                "Репозиторий не найден",
+                "URL репозитория неверный или у тебя нет к нему доступа.",
+                "Проверь адрес remote origin и права доступа.",
+                ["Выйти"]
+            )
+            wait_for_space()
 
         elif "authentication failed" in low or "password authentication was removed" in low:
             choose(
-                "Ошибка авторизации",
-                "GitHub больше не принимает пароли. Нужен Personal Access Token.",
-                ["Открыть https://github.com/settings/tokens", "Выйти"]
+                "Ошибка авторизации GitHub",
+                "GitHub больше не принимает логин/пароль.",
+                "Используй Personal Access Token вместо пароля.",
+                ["Открыть https://github.com/settings/tokens"]
             )
-            return
+            wait_for_space()
 
         elif "rejected" in low or "behind" in low:
             c = choose(
                 "Удалённый репозиторий новее",
-                "На GitHub есть изменения, которых нет локально.",
-                ["git pull --rebase", "Выйти"]
+                "На GitHub есть коммиты, которых нет локально.",
+                "Подтянуть изменения и повторить push.",
+                ["git pull --rebase", "Отмена"]
             )
             if c == 1:
                 ok, _ = run_git("git pull --rebase")
                 if not ok:
-                    print("⚠️ Конфликт. Реши вручную.")
-                    return
+                    print("⚠️ Конфликт. Исправь вручную.")
+                    wait_for_space()
             else:
-                return
+                wait_for_space()
+
+        elif "refusing to merge unrelated histories" in low:
+            choose(
+                "Несвязанные истории",
+                "Локальный и удалённый репозиторий не имеют общей истории.",
+                "Обычно возникает при первом pull.",
+                ["git pull --allow-unrelated-histories"]
+            )
+            wait_for_space()
+
+        elif "index.lock" in low:
+            choose(
+                "Git заблокирован",
+                "Файл index.lock остался после сбоя.",
+                "Закрой все git-процессы и удали .git/index.lock.",
+                ["Выйти"]
+            )
+            wait_for_space()
+
+        elif "ssl certificate problem" in low:
+            choose(
+                "SSL ошибка",
+                "Проблема сертификата (часто прокси или корпоративная сеть).",
+                "Проверь сеть, VPN или прокси.",
+                ["Выйти"]
+            )
+            wait_for_space()
+
+        elif "unable to access" in low or "could not resolve host" in low:
+            choose(
+                "Проблемы с сетью",
+                "GitHub недоступен: интернет, DNS или VPN.",
+                "Проверь соединение и повтори.",
+                ["Выйти"]
+            )
+            wait_for_space()
 
         elif "detached head" in low:
             choose(
                 "Detached HEAD",
                 "Ты не находишься на ветке.",
-                ["git checkout main/master", "Выйти"]
+                "Переключись на main или master.",
+                ["git checkout main/master"]
             )
-            return
-
-        elif "index.lock" in low:
-            choose(
-                "Файл блокировки Git",
-                "Git думает, что другая операция всё ещё идёт.",
-                ["Удалить .git/index.lock вручную", "Выйти"]
-            )
-            return
-
-        elif "ssl certificate problem" in low:
-            choose(
-                "SSL ошибка",
-                "Проблема с сертификатом (часто прокси / корпоративная сеть).",
-                ["Проверить сеть / VPN", "Выйти"]
-            )
-            return
-
-        elif "unable to access" in low:
-            choose(
-                "GitHub недоступен",
-                "Проблемы с сетью, VPN или DNS.",
-                ["Проверить интернет и повторить", "Выйти"]
-            )
-            return
-
-        elif "permission denied" in low:
-            choose(
-                "Нет прав на репозиторий",
-                "У тебя нет прав push в этот репозиторий.",
-                ["Проверить URL репозитория", "Выйти"]
-            )
-            return
+            wait_for_space()
 
         else:
-            c = choose(
+            choose(
                 "Неизвестная ошибка",
                 "Git вернул ошибку, которую скрипт не распознал.",
-                ["Попробовать ещё раз", "Выйти"]
+                "См. лог-файл для деталей.",
+                ["Выйти"]
             )
-            if c == 2:
-                return
+            wait_for_space()
 
 
 if __name__ == "__main__":
