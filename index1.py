@@ -20,6 +20,7 @@ WAIT_CHROME = 3
 
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))  # ChatGPT/
 MD_DIR = ROOT_DIR
+
 ASSETS_ROOT = os.path.join(MD_DIR, "ChatGPT_0x", "Cach")
 
 # runtime
@@ -69,6 +70,7 @@ def download_image(src):
             f.write(r.content)
 
     DOWNLOADED_FILES.append(name)
+
     return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
 
 
@@ -79,41 +81,32 @@ def extract_chat(page):
     last_role = None
     buffer = []
 
-    # ✅ АКТУАЛЬНЫЙ СЕЛЕКТОР CHATGPT
-    for article in soup.select("div[data-message-author-role]"):
-
-        # ✅ роль берём напрямую из DOM
-        role = article.get("data-message-author-role", "assistant")
+    for article in soup.select("article"):
+        role = "assistant"
+        if article.find("h5") and "You" in article.get_text():
+            role = "user"
 
         blocks = []
 
-        # ❗ без рекурсии — чтобы не было дублей
-        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=False):
+        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=True):
 
             if el.name == "img" and el.get("src"):
                 blocks.append(f"![]({download_image(el['src'])})")
 
             elif el.name == "pre":
-                code_el = el.find("code")
-                if not code_el:
-                    continue
-
-                code = code_el.get_text("\n", strip=False)
-                code = re.sub(r"\n{2,}", "\n", code)
-
+                code = el.get_text("\n", strip=False)
                 lang = ""
-                for c in code_el.get("class", []):
+                for c in el.get("class", []):
                     if c.startswith("language-"):
                         lang = c.replace("language-", "")
-
                 blocks.append(f"```{lang}\n{code.rstrip()}\n```")
 
             elif el.name in ("ul", "ol"):
-                for li in el.find_all("li", recursive=False):
-                    blocks.append(f"- {li.get_text(' ', strip=True)}")
+                for li in el.find_all("li"):
+                    blocks.append(f"- {li.get_text(strip=True)}")
 
             elif el.name == "p":
-                text = el.get_text(" ", strip=True)
+                text = el.get_text(strip=True)
                 if text:
                     blocks.append(text)
 
@@ -151,7 +144,11 @@ def format_md(messages, title, source_url):
     ]
 
     for role, text in messages:
-        out.append("## 🧑 You" if role == "user" else "## 🤖 ChatGPT")
+        if role == "user":
+            out.append("## 🧑 You")
+        else:
+            out.append("## 🤖 ChatGPT")
+
         out.append("")
         out.append(text.strip())
         out.append("")
@@ -189,8 +186,6 @@ def main():
             title = get_chat_title(page)
             messages = extract_chat(page)
 
-            print(f"🧪 Найдено сообщений: {len(messages)}")
-
             global CURRENT_CHAT_SLUG, CURRENT_CACHE_DIR, DOWNLOADED_FILES
             DOWNLOADED_FILES = []
 
@@ -208,6 +203,7 @@ def main():
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(md_text)
 
+            # если ассетов нет — чистим
             if not DOWNLOADED_FILES:
                 if os.path.exists(os.path.join(MD_DIR, "ChatGPT_0x")):
                     shutil.rmtree(os.path.join(MD_DIR, "ChatGPT_0x"))
