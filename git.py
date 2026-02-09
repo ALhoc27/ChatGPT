@@ -3,7 +3,7 @@ from datetime import datetime
 import os
 import sys
 
-LOG_FILE = "git_smart_push.log"
+LOG_FILE = "git.log"
 
 
 def log(text):
@@ -11,12 +11,9 @@ def log(text):
         f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {text}\n")
 
 
-def wait_for_space():
-    print("\nНажмите ПРОБЕЛ для выхода...")
-    while True:
-        key = input()
-        if key == " ":
-            sys.exit(0)
+def wait_for_enter():
+    input("\nНажмите ENTER для выхода...")
+    sys.exit(0)
 
 
 def run_git(cmd):
@@ -58,7 +55,7 @@ def main():
 
     if not os.path.isdir(".git"):
         print("❌ Это не git-репозиторий (нет папки .git)")
-        wait_for_space()
+        wait_for_enter()
 
     branch = detect_branch()
     log(f"Branch: {branch}")
@@ -66,7 +63,7 @@ def main():
     msg = input("Введите сообщение коммита: ").strip()
     if not msg:
         print("❌ Пустое сообщение коммита недопустимо")
-        wait_for_space()
+        wait_for_enter()
 
     commit_msg = f"{msg} [{datetime.now().strftime('%Y-%m-%d %H:%M')}]"
     print(f"\n📝 Commit:\n{commit_msg}\n")
@@ -76,13 +73,13 @@ def main():
     ok, out = run_git(f'git commit -m "{commit_msg}"')
     if not ok and "nothing to commit" not in out.lower():
         print("❌ Ошибка коммита:\n", out)
-        wait_for_space()
+        wait_for_enter()
 
     while True:
         ok, out = run_git(f"git push origin {branch}")
         if ok:
             print("✅ Push выполнен успешно")
-            wait_for_space()
+            wait_for_enter()
 
         low = out.lower()
         print("\n❌ Ошибка git push:\n", out)
@@ -99,7 +96,7 @@ def main():
             if c == 1:
                 run_git("git stash")
             else:
-                wait_for_space()
+                wait_for_enter()
 
         elif "src refspec" in low or "bad revision 'head'" in low:
             c = choose(
@@ -111,9 +108,9 @@ def main():
             if c == 1:
                 run_git(f"git branch -M {branch}")
                 run_git(f"git push -u origin {branch}")
-                wait_for_space()
+                wait_for_enter()
             else:
-                wait_for_space()
+                wait_for_enter()
 
         elif "repository not found" in low:
             choose(
@@ -122,7 +119,7 @@ def main():
                 "Проверь адрес remote origin и права доступа.",
                 ["Выйти"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         elif "authentication failed" in low or "password authentication was removed" in low:
             choose(
@@ -131,7 +128,7 @@ def main():
                 "Используй Personal Access Token вместо пароля.",
                 ["Открыть https://github.com/settings/tokens"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         elif "rejected" in low or "behind" in low:
             c = choose(
@@ -144,9 +141,9 @@ def main():
                 ok, _ = run_git("git pull --rebase")
                 if not ok:
                     print("⚠️ Конфликт. Исправь вручную.")
-                    wait_for_space()
+                    wait_for_enter()
             else:
-                wait_for_space()
+                wait_for_enter()
 
         elif "refusing to merge unrelated histories" in low:
             choose(
@@ -155,7 +152,7 @@ def main():
                 "Обычно возникает при первом pull.",
                 ["git pull --allow-unrelated-histories"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         elif "index.lock" in low:
             choose(
@@ -164,7 +161,7 @@ def main():
                 "Закрой все git-процессы и удали .git/index.lock.",
                 ["Выйти"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         elif "ssl certificate problem" in low:
             choose(
@@ -173,7 +170,7 @@ def main():
                 "Проверь сеть, VPN или прокси.",
                 ["Выйти"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         elif "unable to access" in low or "could not resolve host" in low:
             choose(
@@ -182,7 +179,7 @@ def main():
                 "Проверь соединение и повтори.",
                 ["Выйти"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         elif "detached head" in low:
             choose(
@@ -191,7 +188,7 @@ def main():
                 "Переключись на main или master.",
                 ["git checkout main/master"]
             )
-            wait_for_space()
+            wait_for_enter()
 
         else:
             choose(
@@ -200,7 +197,7 @@ def main():
                 "См. лог-файл для деталей.",
                 ["Выйти"]
             )
-            wait_for_space()
+            wait_for_enter()
 
 
 if __name__ == "__main__":

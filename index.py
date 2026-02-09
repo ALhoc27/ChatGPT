@@ -87,6 +87,89 @@ def extract_chat(page):
             role = "user"
 
         blocks = []
+        seen_blocks = set()  # 🔧 дедупликация
+
+        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=True):
+
+            # ---------- IMG ----------
+            if el.name == "img" and el.get("src"):
+                block = f"![]({download_image(el['src'])})"
+
+            # ---------- CODE ----------
+            elif el.name == "pre":
+                code_el = el.find("code")
+                if not code_el:
+                    continue
+
+                # 🔧 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
+                # собираем код без \n между span
+                code = "".join(code_el.stripped_strings)
+
+                # язык берём ТОЛЬКО у <code>
+                lang = ""
+                for c in code_el.get("class", []):
+                    if c.startswith("language-"):
+                        lang = c.replace("language-", "")
+                        break
+
+                block = f"```{lang}\n{code}\n```"
+
+            # ---------- LIST ----------
+            elif el.name in ("ul", "ol"):
+                for li in el.find_all("li", recursive=False):
+                    text = li.get_text(" ", strip=True)
+                    block = f"- {text}"
+                    if block not in seen_blocks:
+                        blocks.append(block)
+                        seen_blocks.add(block)
+                continue
+
+            # ---------- TEXT ----------
+            elif el.name == "p":
+                text = el.get_text(" ", strip=True)
+                if not text:
+                    continue
+                block = text
+
+            else:
+                continue
+
+            # 🔧 дедупликация ВСЕГО
+            if block not in seen_blocks:
+                blocks.append(block)
+                seen_blocks.add(block)
+
+        if not blocks:
+            continue
+
+        text = "\n\n".join(blocks)
+
+        if role == last_role:
+            buffer.append(text)
+        else:
+            if buffer:
+                messages.append((last_role, "\n\n".join(buffer)))
+            buffer = [text]
+            last_role = role
+
+    if buffer:
+        messages.append((last_role, "\n\n".join(buffer)))
+
+    return messages
+
+
+    soup = BeautifulSoup(page.content(), "html.parser")
+
+    messages = []
+    last_role = None
+    buffer = []
+
+    for article in soup.select("article"):
+        role = "assistant"
+        if article.find("h5") and "You" in article.get_text():
+            role = "user"
+
+        blocks = []
 
         for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=True):
 
