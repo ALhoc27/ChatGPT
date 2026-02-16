@@ -117,24 +117,15 @@ def extract_chat(page):
 
     for article in soup.select("article"):
 
-        # --- НАДЕЖНОЕ определение роли ---
-        role = "assistant"  # по умолчанию
+        # --- НОВОЕ корректное определение роли ---
+        role = article.get("data-turn")
 
-        # 1. Проверяем аватар (самый стабильный способ)
-        avatar = article.find("img", alt=True)
-        if avatar:
-            alt_text = avatar.get("alt", "").lower()
-            if "user" in alt_text:
-                role = "user"
-            elif "chatgpt" in alt_text:
+        if role not in ["user", "assistant"]:
+            msg = article.find(attrs={"data-message-author-role": True})
+            if msg:
+                role = msg.get("data-message-author-role")
+            else:
                 role = "assistant"
-
-        # 2. Дополнительная проверка (если вдруг аватар отсутствует)
-        msg = article.find(attrs={"data-message-author-role": True})
-        if msg:
-            possible = msg.get("data-message-author-role")
-            if possible in ["user", "assistant"]:
-                role = possible
 
         blocks = []
 
