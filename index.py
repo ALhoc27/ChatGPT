@@ -117,10 +117,9 @@ def extract_chat(page):
 
     for article in soup.select("article"):
 
-        role = article.get("data-message-author-role", "assistant")
-        # role = "assistant"
-        # if article.find("h5") and "You" in article.get_text():
-        #     role = "user"
+        role = "assistant"
+        if article.find("h5") and "Вы сказали" in article.get_text():
+            role = "user"
 
         blocks = []
 
