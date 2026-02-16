@@ -333,7 +333,7 @@ def main():
         - где твоя main
         - где origin/main
         - кто «впереди», кто «позади»""",
-                description="",  # добавлено, чтобы satisfy сигнатуру choose()
+                solution=None,  # теперь передан обязательный аргумент
                 options=[
                     "git log --oneline --graph --decorate --all -5  📜 показать последние коммиты",
                     "git push --force  ⚠️ перезаписать GitHub локальным состоянием",
@@ -373,6 +373,7 @@ def main():
                 else:
                     print("❌ Ошибка при reset --hard!")
                 wait_for_enter()
+
 
 
 
