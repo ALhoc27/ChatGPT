@@ -117,9 +117,10 @@ def extract_chat(page):
 
     for article in soup.select("article"):
 
-        role = "assistant"
-        if article.find("h5") and "You" in article.get_text():
-            role = "user"
+        role = article.get("data-message-author-role", "assistant")
+        # role = "assistant"
+        # if article.find("h5") and "You" in article.get_text():
+        #     role = "user"
 
         blocks = []
 
@@ -205,7 +206,9 @@ def extract_chat(page):
 
             # -------- PARAGRAPH --------
             if el.name == "p":
-                if el.find_parent("li"):
+
+                # если внутри списка или blockquote — не обрабатываем отдельно
+                if el.find_parent(["li", "blockquote"]):
                     continue
 
                 text = render_inline(el).strip()
