@@ -3,6 +3,7 @@ import time
 import os
 import sys
 import hashlib
+import requests
 import re
 from urllib.parse import urlparse
 from datetime import datetime
@@ -17,10 +18,12 @@ CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 CHROME_PROFILE = r"C:\chrome-debug"
 WAIT_CHROME = 3
 
-ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
+ROOT_DIR = os.path.abspath(os.path.dirname(__file__))  # ChatGPT/
 MD_DIR = ROOT_DIR
+
 ASSETS_ROOT = os.path.join(MD_DIR, "ChatGPT_0x", "Cach")
 
+# runtime
 CURRENT_CHAT_SLUG = None
 CURRENT_CACHE_DIR = None
 DOWNLOADED_FILES = []
@@ -50,39 +53,28 @@ def scroll_to_top(page):
         time.sleep(1)
 
 
-# ================= ИСПРАВЛЕНО =================
-def download_image(src, context):
+def download_image(src):
     global CURRENT_CACHE_DIR, DOWNLOADED_FILES, CURRENT_CHAT_SLUG
 
     if CURRENT_CACHE_DIR is None:
         return src
 
-    if not src or src.startswith("data:"):
-        return src
-
+    # гарантируем существование папок ТОЛЬКО при реальной загрузке
     os.makedirs(CURRENT_CACHE_DIR, exist_ok=True)
 
-    ext = os.path.splitext(urlparse(src).path)[1]
-    if not ext or len(ext) > 5:
-        ext = ".png"
-
+    ext = os.path.splitext(urlparse(src).path)[1] or ".png"
     name = hashlib.md5(src.encode()).hexdigest()[:12] + ext
     path = os.path.join(CURRENT_CACHE_DIR, name)
 
     if not os.path.exists(path):
-        response = context.request.get(src)
-        if not response.ok:
-            print(f"⚠ Не удалось скачать изображение: {src}")
-            return src
-
+        r = requests.get(src, timeout=20)
+        r.raise_for_status()
         with open(path, "wb") as f:
-            f.write(response.body())
+            f.write(r.content)
 
-    if name not in DOWNLOADED_FILES:
-        DOWNLOADED_FILES.append(name)
+    DOWNLOADED_FILES.append(name)
 
     return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
-# =================================================
 
 
 def render_inline(el):
@@ -116,49 +108,56 @@ def render_inline(el):
     return ''.join(render_inline(c) for c in el.children)
 
 
-# ================= ИСПРАВЛЕНО =================
-def extract_chat(page, context):
+def extract_chat(page):
     soup = BeautifulSoup(page.content(), "html.parser")
 
     messages = []
     last_role = None
     buffer = []
 
-    for article in soup.select("article[data-testid^='conversation-turn']"):
+    for article in soup.select("article"):
 
-        role = article.get("data-turn")
-        if role not in ["user", "assistant"]:
-            role = "assistant"
+        # --- НАДЕЖНОЕ определение роли ---
+        role = "assistant"  # по умолчанию
+
+        # 1. Проверяем аватар (самый стабильный способ)
+        avatar = article.find("img", alt=True)
+        if avatar:
+            alt_text = avatar.get("alt", "").lower()
+            if "user" in alt_text:
+                role = "user"
+            elif "chatgpt" in alt_text:
+                role = "assistant"
+
+        # 2. Дополнительная проверка (если вдруг аватар отсутствует)
+        msg = article.find(attrs={"data-message-author-role": True})
+        if msg:
+            possible = msg.get("data-message-author-role")
+            if possible in ["user", "assistant"]:
+                role = possible
 
         blocks = []
 
-        container = article.find(attrs={"data-message-author-role": role})
-        if not container:
-            continue
-
-        for el in container.find_all([
+        for el in article.find_all([
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
             "img", "hr", "blockquote",
-            "table", "div"
+            "table"
         ]):
 
-            if el.name == "img" and el.get("src"):
-                src = el["src"]
-                if not src.startswith("data:"):
-                    blocks.append(f"![]({download_image(src, context)})")
-                continue
-
+            # -------- ЗАГОЛОВКИ --------
             if el.name in ["h1", "h2", "h3", "h4"]:
                 level = int(el.name[1])
                 text = render_inline(el).strip()
                 blocks.append(f"{'#' * level} {text}")
                 continue
 
+            # -------- HR --------
             if el.name == "hr":
                 blocks.append("---")
                 continue
 
+            # -------- CODE BLOCK --------
             if el.name == "pre":
                 code_tag = el.find("code")
                 if not code_tag:
@@ -173,6 +172,12 @@ def extract_chat(page, context):
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
+            # -------- INLINE IMAGE --------
+            if el.name == "img" and el.get("src"):
+                blocks.append(f"![]({download_image(el['src'])})")
+                continue
+
+            # -------- TABLE --------
             if el.name == "table":
                 rows = []
                 for tr in el.find_all("tr"):
@@ -186,6 +191,7 @@ def extract_chat(page, context):
                     header = rows[0]
                     separator = ["---"] * len(header)
                     table_md = []
+
                     table_md.append("| " + " | ".join(header) + " |")
                     table_md.append("| " + " | ".join(separator) + " |")
 
@@ -193,13 +199,16 @@ def extract_chat(page, context):
                         table_md.append("| " + " | ".join(row) + " |")
 
                     blocks.append("\n".join(table_md))
+
                 continue
 
+            # -------- BLOCKQUOTE --------
             if el.name == "blockquote":
                 text = render_inline(el).strip()
                 blocks.append(f"> {text}")
                 continue
 
+            # -------- LISTS --------
             if el.name in ("ul", "ol"):
                 is_ordered = el.name == "ol"
                 for i, li in enumerate(el.find_all("li", recursive=False), start=1):
@@ -209,9 +218,13 @@ def extract_chat(page, context):
                         blocks.append(f"{prefix} {text}")
                 continue
 
+            # -------- PARAGRAPH --------
             if el.name == "p":
+
+                # если внутри списка или blockquote — не обрабатываем отдельно
                 if el.find_parent(["li", "blockquote"]):
                     continue
+
                 text = render_inline(el).strip()
                 if text:
                     blocks.append(text)
@@ -234,7 +247,7 @@ def extract_chat(page, context):
         messages.append((last_role, "\n\n".join(buffer)))
 
     return messages
-# =================================================
+
 
 
 def format_md(messages, title, source_url):
@@ -261,6 +274,7 @@ def format_md(messages, title, source_url):
 
 
 def main():
+    print("🚀 Запускаем Chrome с удаленной отладкой...")
     chrome_process = subprocess.Popen([
         CHROME_PATH,
         "--remote-debugging-port=9222",
@@ -268,6 +282,7 @@ def main():
         f"--user-data-dir={CHROME_PROFILE}"
     ])
 
+    print(f"⏳ Ждем {WAIT_CHROME} секунд на запуск Chrome...")
     time.sleep(WAIT_CHROME)
 
     exit_code = 0
@@ -279,20 +294,24 @@ def main():
             page = context.new_page()
 
             chat_url = get_chat_url()
+            print("🌐 Открываем чат...")
             page.goto(chat_url, wait_until="networkidle")
+
             scroll_to_top(page)
 
+            print("📥 Экспортируем...")
+            title = get_chat_title(page)
+
+            # ⬇️ КРИТИЧНО: инициализация ДО парсинга
             global CURRENT_CHAT_SLUG, CURRENT_CACHE_DIR, DOWNLOADED_FILES
             DOWNLOADED_FILES = []
-
-            title = get_chat_title(page)
 
             ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
             safe_title = re.sub(r"[\\/:*?\"<>|]", "", title)
             CURRENT_CHAT_SLUG = f"{safe_title}_{ts}"
             CURRENT_CACHE_DIR = os.path.join(ASSETS_ROOT, CURRENT_CHAT_SLUG)
 
-            messages = extract_chat(page, context)
+            messages = extract_chat(page)
 
             md_path = os.path.join(MD_DIR, f"{CURRENT_CHAT_SLUG}.md")
             md_text = format_md(messages, title, chat_url)
@@ -300,6 +319,7 @@ def main():
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(md_text)
 
+            # если ассетов нет — чистим всё дерево
             if not DOWNLOADED_FILES:
                 if os.path.exists(os.path.join(MD_DIR, "ChatGPT_0x")):
                     shutil.rmtree(os.path.join(MD_DIR, "ChatGPT_0x"))
@@ -309,6 +329,7 @@ def main():
         exit_code = 1
 
     finally:
+        print("🛑 Закрываем Chrome...")
         if chrome_process.poll() is None:
             chrome_process.terminate()
             try:
