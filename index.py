@@ -117,9 +117,15 @@ def extract_chat(page):
 
     for article in soup.select("article"):
 
-        role = "assistant"
-        if article.find("h5") and "Вы сказали" in article.get_text():
-            role = "user"
+        # --- НОВОЕ корректное определение роли ---
+        role = article.get("data-turn")
+
+        if role not in ["user", "assistant"]:
+            msg = article.find(attrs={"data-message-author-role": True})
+            if msg:
+                role = msg.get("data-message-author-role")
+            else:
+                role = "assistant"
 
         blocks = []
 
