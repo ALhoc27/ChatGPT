@@ -115,17 +115,16 @@ def extract_chat(page):
     last_role = None
     buffer = []
 
-    for article in soup.select("article"):
+    for article in soup.select('[data-message-author-role], article'):
 
-        # --- НОВОЕ корректное определение роли ---
-        role = article.get("data-turn")
+        role = article.get("data-message-author-role")
 
         if role not in ["user", "assistant"]:
-            msg = article.find(attrs={"data-message-author-role": True})
-            if msg:
-                role = msg.get("data-message-author-role")
-            else:
-                role = "assistant"
+            # fallback для старой разметки
+            role = article.get("data-turn")
+
+        if role not in ["user", "assistant"]:
+            role = "assistant"
 
         blocks = []
 
