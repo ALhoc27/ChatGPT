@@ -85,31 +85,53 @@ def extract_chat(page):
     buffer = []
 
     for article in soup.select("article"):
+
         role = "assistant"
         if article.find("h5") and "You" in article.get_text():
             role = "user"
 
         blocks = []
 
-        for el in article.find_all(["p", "pre", "img", "ul", "ol"], recursive=True):
+        # берём только реальные содержательные блоки
+        for el in article.find_all(["p", "pre", "ul", "ol", "img"]):
 
+            # ---- КОД ----
+            if el.name == "pre":
+                code_tag = el.find("code")
+                if not code_tag:
+                    continue
+
+                lang = ""
+                for c in code_tag.get("class", []):
+                    if c.startswith("language-"):
+                        lang = c.replace("language-", "").lower()
+
+                code = code_tag.get_text("\n", strip=False).rstrip()
+
+                blocks.append(f"```{lang}\n{code}\n```")
+                continue
+
+            # ---- КАРТИНКИ ----
             if el.name == "img" and el.get("src"):
                 blocks.append(f"![]({download_image(el['src'])})")
+                continue
 
-            elif el.name == "pre":
-                code = el.get_text("\n", strip=False)
-                lang = ""
-                for c in el.get("class", []):
-                    if c.startswith("language-"):
-                        lang = c.replace("language-", "")
-                blocks.append(f"```{lang}\n{code.rstrip()}\n```")
+            # ---- СПИСКИ ----
+            if el.name in ("ul", "ol"):
+                for li in el.find_all("li", recursive=False):
+                    text = li.get_text(" ", strip=True)
+                    if text:
+                        blocks.append(f"- {text}")
+                continue
 
-            elif el.name in ("ul", "ol"):
-                for li in el.find_all("li"):
-                    blocks.append(f"- {li.get_text(strip=True)}")
+            # ---- ПАРАГРАФЫ ----
+            if el.name == "p":
 
-            elif el.name == "p":
-                text = el.get_text(strip=True)
+                # если этот p внутри списка — пропускаем
+                if el.find_parent(["li"]):
+                    continue
+
+                text = el.get_text(" ", strip=True)
                 if text:
                     blocks.append(text)
 
@@ -130,6 +152,7 @@ def extract_chat(page):
         messages.append((last_role, "\n\n".join(buffer)))
 
     return messages
+
 
 
 def format_md(messages, title, source_url):
