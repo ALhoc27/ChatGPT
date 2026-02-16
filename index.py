@@ -77,6 +77,37 @@ def download_image(src):
     return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
 
 
+def render_inline(el):
+    from bs4 import NavigableString, Tag
+
+    if isinstance(el, NavigableString):
+        return str(el)
+
+    if not isinstance(el, Tag):
+        return ""
+
+    name = el.name
+
+    if name in ["strong", "b"]:
+        return f"**{''.join(render_inline(c) for c in el.children)}**"
+
+    if name in ["em", "i"]:
+        return f"*{''.join(render_inline(c) for c in el.children)}*"
+
+    if name == "del":
+        return f"~~{''.join(render_inline(c) for c in el.children)}~~"
+
+    if name == "code":
+        return f"`{el.get_text(strip=True)}`"
+
+    if name == "a":
+        text = ''.join(render_inline(c) for c in el.children)
+        href = el.get("href", "")
+        return f"[{text}]({href})" if href else text
+
+    return ''.join(render_inline(c) for c in el.children)
+
+
 def extract_chat(page):
     soup = BeautifulSoup(page.content(), "html.parser")
 
@@ -95,23 +126,23 @@ def extract_chat(page):
         for el in article.find_all([
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
-            "img", "hr"
+            "img", "hr", "blockquote",
+            "table"
         ]):
 
-            # ---- ЗАГОЛОВКИ ----
+            # -------- ЗАГОЛОВКИ --------
             if el.name in ["h1", "h2", "h3", "h4"]:
                 level = int(el.name[1])
-                text = el.get_text(" ", strip=True)
-                if text:
-                    blocks.append(f"{'#' * level} {text}")
+                text = render_inline(el).strip()
+                blocks.append(f"{'#' * level} {text}")
                 continue
 
-            # ---- РАЗДЕЛИТЕЛЬ ----
+            # -------- HR --------
             if el.name == "hr":
                 blocks.append("---")
                 continue
 
-            # ---- КОД ----
+            # -------- CODE BLOCK --------
             if el.name == "pre":
                 code_tag = el.find("code")
                 if not code_tag:
@@ -123,31 +154,61 @@ def extract_chat(page):
                         lang = c.replace("language-", "").lower()
 
                 code = code_tag.get_text("\n", strip=False).rstrip()
-
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
-            # ---- ИЗОБРАЖЕНИЯ ----
+            # -------- INLINE IMAGE --------
             if el.name == "img" and el.get("src"):
                 blocks.append(f"![]({download_image(el['src'])})")
                 continue
 
-            # ---- СПИСКИ ----
+            # -------- TABLE --------
+            if el.name == "table":
+                rows = []
+                for tr in el.find_all("tr"):
+                    cells = [
+                        render_inline(td).strip()
+                        for td in tr.find_all(["th", "td"])
+                    ]
+                    rows.append(cells)
+
+                if rows:
+                    header = rows[0]
+                    separator = ["---"] * len(header)
+                    table_md = []
+
+                    table_md.append("| " + " | ".join(header) + " |")
+                    table_md.append("| " + " | ".join(separator) + " |")
+
+                    for row in rows[1:]:
+                        table_md.append("| " + " | ".join(row) + " |")
+
+                    blocks.append("\n".join(table_md))
+
+                continue
+
+            # -------- BLOCKQUOTE --------
+            if el.name == "blockquote":
+                text = render_inline(el).strip()
+                blocks.append(f"> {text}")
+                continue
+
+            # -------- LISTS --------
             if el.name in ("ul", "ol"):
                 is_ordered = el.name == "ol"
                 for i, li in enumerate(el.find_all("li", recursive=False), start=1):
-                    text = li.get_text(" ", strip=True)
+                    text = render_inline(li).strip()
                     if text:
                         prefix = f"{i}." if is_ordered else "-"
                         blocks.append(f"{prefix} {text}")
                 continue
 
-            # ---- ПАРАГРАФЫ ----
+            # -------- PARAGRAPH --------
             if el.name == "p":
                 if el.find_parent("li"):
                     continue
 
-                text = el.get_text(" ", strip=True)
+                text = render_inline(el).strip()
                 if text:
                     blocks.append(text)
                 continue
@@ -169,6 +230,7 @@ def extract_chat(page):
         messages.append((last_role, "\n\n".join(buffer)))
 
     return messages
+
 
 
 def format_md(messages, title, source_url):
