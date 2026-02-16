@@ -115,26 +115,16 @@ def extract_chat(page):
     last_role = None
     buffer = []
 
-    for article in soup.select("article"):
+    for article in soup.select('[data-message-author-role], article'):
 
-        # --- НАДЕЖНОЕ определение роли ---
-        role = "assistant"  # по умолчанию
+        role = article.get("data-message-author-role")
 
-        # 1. Проверяем аватар (самый стабильный способ)
-        avatar = article.find("img", alt=True)
-        if avatar:
-            alt_text = avatar.get("alt", "").lower()
-            if "user" in alt_text:
-                role = "user"
-            elif "chatgpt" in alt_text:
-                role = "assistant"
+        if role not in ["user", "assistant"]:
+            # fallback для старой разметки
+            role = article.get("data-turn")
 
-        # 2. Дополнительная проверка (если вдруг аватар отсутствует)
-        msg = article.find(attrs={"data-message-author-role": True})
-        if msg:
-            possible = msg.get("data-message-author-role")
-            if possible in ["user", "assistant"]:
-                role = possible
+        if role not in ["user", "assistant"]:
+            role = "assistant"
 
         blocks = []
 
