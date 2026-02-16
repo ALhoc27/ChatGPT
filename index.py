@@ -92,8 +92,24 @@ def extract_chat(page):
 
         blocks = []
 
-        # берём только реальные содержательные блоки
-        for el in article.find_all(["p", "pre", "ul", "ol", "img"]):
+        for el in article.find_all([
+            "h1", "h2", "h3", "h4",
+            "p", "pre", "ul", "ol",
+            "img", "hr"
+        ]):
+
+            # ---- ЗАГОЛОВКИ ----
+            if el.name in ["h1", "h2", "h3", "h4"]:
+                level = int(el.name[1])
+                text = el.get_text(" ", strip=True)
+                if text:
+                    blocks.append(f"{'#' * level} {text}")
+                continue
+
+            # ---- РАЗДЕЛИТЕЛЬ ----
+            if el.name == "hr":
+                blocks.append("---")
+                continue
 
             # ---- КОД ----
             if el.name == "pre":
@@ -111,29 +127,30 @@ def extract_chat(page):
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
-            # ---- КАРТИНКИ ----
+            # ---- ИЗОБРАЖЕНИЯ ----
             if el.name == "img" and el.get("src"):
                 blocks.append(f"![]({download_image(el['src'])})")
                 continue
 
             # ---- СПИСКИ ----
             if el.name in ("ul", "ol"):
-                for li in el.find_all("li", recursive=False):
+                is_ordered = el.name == "ol"
+                for i, li in enumerate(el.find_all("li", recursive=False), start=1):
                     text = li.get_text(" ", strip=True)
                     if text:
-                        blocks.append(f"- {text}")
+                        prefix = f"{i}." if is_ordered else "-"
+                        blocks.append(f"{prefix} {text}")
                 continue
 
             # ---- ПАРАГРАФЫ ----
             if el.name == "p":
-
-                # если этот p внутри списка — пропускаем
-                if el.find_parent(["li"]):
+                if el.find_parent("li"):
                     continue
 
                 text = el.get_text(" ", strip=True)
                 if text:
                     blocks.append(text)
+                continue
 
         if not blocks:
             continue
