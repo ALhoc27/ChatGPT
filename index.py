@@ -154,7 +154,6 @@ def extract_chat(page):
     return messages
 
 
-
 def format_md(messages, title, source_url):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
