@@ -12,22 +12,54 @@ from playwright.sync_api import sync_playwright
 import pyperclip
 import shutil
 
+# >>> ADDED
+from pygments.lexers import guess_lexer
+from pygments.util import ClassNotFound
+
 
 # ================= НАСТРОЙКИ =================
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 CHROME_PROFILE = r"C:\chrome-debug"
 WAIT_CHROME = 3
 
-ROOT_DIR = os.path.abspath(os.path.dirname(__file__))  # ChatGPT/
+ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
 MD_DIR = ROOT_DIR
-
 ASSETS_ROOT = os.path.join(MD_DIR, "ChatGPT_0x", "Cach")
 
-# runtime
 CURRENT_CHAT_SLUG = None
 CURRENT_CACHE_DIR = None
 DOWNLOADED_FILES = []
 # ============================================
+
+
+# >>> ADDED
+def detect_language(code: str) -> str:
+    try:
+        lexer = guess_lexer(code)
+        name = lexer.name.lower()
+
+        mapping = {
+            "python": "python",
+            "javascript": "javascript",
+            "typescript": "typescript",
+            "c++": "cpp",
+            "c#": "csharp",
+            "go": "go",
+            "rust": "rust",
+            "java": "java",
+            "html": "html",
+            "css": "css",
+            "sql": "sql",
+        }
+
+        for key in mapping:
+            if key in name:
+                return mapping[key]
+
+        return "text"
+
+    except ClassNotFound:
+        return "text"
 
 
 def get_chat_url():
@@ -53,7 +85,6 @@ def scroll_to_top(page):
         time.sleep(1)
 
 
-# ================= ИЗМЕНЕНО ТОЛЬКО ЭТО =================
 def download_image(src, page):
     global CURRENT_CACHE_DIR, DOWNLOADED_FILES, CURRENT_CHAT_SLUG
 
@@ -83,7 +114,6 @@ def download_image(src, page):
         )
 
         if not response.ok:
-            print("❌ HTTP:", response.status, src)
             return src
 
         with open(path, "wb") as f:
@@ -92,10 +122,8 @@ def download_image(src, page):
         DOWNLOADED_FILES.append(name)
         return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
 
-    except Exception as e:
-        print("Ошибка загрузки:", e)
+    except Exception:
         return src
-# =======================================================
 
 
 def render_inline(el):
@@ -138,33 +166,39 @@ def extract_chat(page):
 
     for article in soup.select("article[data-testid^='conversation-turn']"):
 
-        role = article.get("data-turn")
-        if role not in ["user", "assistant"]:
+        # --- НАДЕЖНОЕ определение роли ---
+        role_container = article.select_one("[data-message-author-role]")
+        if role_container:
+            role = role_container.get("data-message-author-role", "assistant")
+            container = role_container
+        else:
+            # fallback — если структура изменилась
             role = "assistant"
+            container = article
+
+        print(role)
 
         blocks = []
 
-        container = article.find(attrs={"data-message-author-role": role})
-        if not container:
-            continue
+        # --- ИЗОБРАЖЕНИЯ ---
+        for img in container.find_all("img"):
+            src = img.get("src")
+            if src and not src.startswith("data:"):
+                blocks.append(f"![]({download_image(src, page)})")
 
+        # --- ОСНОВНЫЕ БЛОКИ ---
         for el in container.find_all([
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
-            "img", "hr", "blockquote",
-            "table", "div"
+            "hr", "blockquote",
+            "table"
         ]):
-
-            if el.name == "img" and el.get("src"):
-                src = el.get("src")
-                if not src.startswith("data:"):
-                    blocks.append(f"![]({download_image(src, page)})")
-                continue
 
             if el.name in ["h1", "h2", "h3", "h4"]:
                 level = int(el.name[1])
                 text = render_inline(el).strip()
-                blocks.append(f"{'#' * level} {text}")
+                if text:
+                    blocks.append(f"{'#' * level} {text}")
                 continue
 
             if el.name == "hr":
@@ -180,39 +214,21 @@ def extract_chat(page):
                 for c in code_tag.get("class", []):
                     if c.startswith("language-"):
                         lang = c.replace("language-", "").lower()
+                        break
 
                 code = code_tag.get_text()
                 code = code.replace("\r\n", "\n").rstrip("\n")
 
+                if not lang:
+                    lang = detect_language(code)
+
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
-            if el.name == "table":
-                rows = []
-                for tr in el.find_all("tr"):
-                    cells = [
-                        render_inline(td).strip()
-                        for td in tr.find_all(["th", "td"])
-                    ]
-                    rows.append(cells)
-
-                if rows:
-                    header = rows[0]
-                    separator = ["---"] * len(header)
-                    table_md = []
-
-                    table_md.append("| " + " | ".join(header) + " |")
-                    table_md.append("| " + " | ".join(separator) + " |")
-
-                    for row in rows[1:]:
-                        table_md.append("| " + " | ".join(row) + " |")
-
-                    blocks.append("\n".join(table_md))
-                continue
-
-            if el.name == "blockquote":
+            if el.name == "p":
                 text = render_inline(el).strip()
-                blocks.append(f"> {text}")
+                if text:
+                    blocks.append(text)
                 continue
 
             if el.name in ("ul", "ol"):
@@ -223,20 +239,6 @@ def extract_chat(page):
                         prefix = f"{i}." if is_ordered else "-"
                         blocks.append(f"{prefix} {text}")
                 continue
-
-            if el.name == "p":
-                if el.find_parent(["li", "blockquote"]):
-                    continue
-                text = render_inline(el).strip()
-                if text:
-                    blocks.append(text)
-                continue
-
-        for img in container.find_all("img"):
-            src = img.get("src")
-            if not src or src.startswith("data:"):
-                continue
-            blocks.append(f"![]({download_image(src, page)})")
 
         if not blocks:
             continue
@@ -255,22 +257,6 @@ def extract_chat(page):
         messages.append((last_role, "\n\n".join(buffer)))
 
     return messages
-
-
-def render_block(container, page):
-    blocks = []
-
-    for el in container.children:
-
-        if getattr(el, "name", None) is None:
-            continue
-
-        if el.name == "img" and el.get("src"):
-            blocks.append(f"![]({download_image(el['src'], page)})")
-            continue
-
-    return blocks
-
 
 def format_md(messages, title, source_url):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
