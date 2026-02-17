@@ -131,8 +131,21 @@ def extract_chat(page):
             "table", "div"
         ]):
 
-            # -------- USER RAW PRE BLOCK --------
+            # -------- USER TEXT BLOCK (НЕ КОД) --------
             if el.name == "div" and "whitespace-pre-wrap" in el.get("class", []):
+
+                # если внутри есть настоящий <code> — пусть обработает блок ниже
+                if el.find("code"):
+                    continue
+
+                raw_text = el.get_text()
+
+                raw_text = raw_text.replace("\r\n", "\n").strip()
+
+                if raw_text:
+                    blocks.append(raw_text)
+
+                continue
                 raw_text = el.get_text()
 
                 # нормализуем Windows переносы
@@ -338,7 +351,7 @@ def format_md(messages, title, source_url):
     ]
 
     for role, text in messages:
-        out.append("## 🧑 You" if role == "user" else "## 🤖 ChatGPT")
+        out.append("> [!note] You" if role == "user" else "## 🤖 ChatGPT")
         out.append("")
         out.append(text.strip())
         out.append("")
