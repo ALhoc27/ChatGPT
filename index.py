@@ -406,7 +406,10 @@ def main():
         CHROME_PATH,
         "--remote-debugging-port=9222",
         "--remote-debugging-address=127.0.0.1",
-        f"--user-data-dir={CHROME_USER_DATA}"
+        f"--user-data-dir={CHROME_USER_DATA}",
+        "--window-position=-32000,-32000",
+        "--window-size=1920,1080",
+        "--start-maximized"
     ])
 
     print(f"⏳ Ждем {WAIT_CHROME} секунд на запуск Chrome...")
