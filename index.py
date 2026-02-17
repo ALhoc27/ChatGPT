@@ -53,28 +53,49 @@ def scroll_to_top(page):
         time.sleep(1)
 
 
-def download_image(src):
+# ================= ИЗМЕНЕНО ТОЛЬКО ЭТО =================
+def download_image(src, page):
     global CURRENT_CACHE_DIR, DOWNLOADED_FILES, CURRENT_CHAT_SLUG
 
     if CURRENT_CACHE_DIR is None:
         return src
 
-    # гарантируем существование папок ТОЛЬКО при реальной загрузке
+    if not src or src.startswith("data:"):
+        return src
+
     os.makedirs(CURRENT_CACHE_DIR, exist_ok=True)
 
     ext = os.path.splitext(urlparse(src).path)[1] or ".png"
     name = hashlib.md5(src.encode()).hexdigest()[:12] + ext
     path = os.path.join(CURRENT_CACHE_DIR, name)
 
-    if not os.path.exists(path):
-        r = requests.get(src, timeout=20)
-        r.raise_for_status()
+    if os.path.exists(path):
+        DOWNLOADED_FILES.append(name)
+        return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
+
+    try:
+        response = page.context.request.get(
+            src,
+            headers={
+                "referer": page.url,
+                "origin": "https://chatgpt.com"
+            }
+        )
+
+        if not response.ok:
+            print("❌ HTTP:", response.status, src)
+            return src
+
         with open(path, "wb") as f:
-            f.write(r.content)
+            f.write(response.body())
 
-    DOWNLOADED_FILES.append(name)
+        DOWNLOADED_FILES.append(name)
+        return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
 
-    return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
+    except Exception as e:
+        print("Ошибка загрузки:", e)
+        return src
+# =======================================================
 
 
 def render_inline(el):
@@ -115,40 +136,41 @@ def extract_chat(page):
     last_role = None
     buffer = []
 
-    for article in soup.select("article"):
+    for article in soup.select("article[data-testid^='conversation-turn']"):
 
-        # --- НОВОЕ корректное определение роли ---
         role = article.get("data-turn")
-
         if role not in ["user", "assistant"]:
-            msg = article.find(attrs={"data-message-author-role": True})
-            if msg:
-                role = msg.get("data-message-author-role")
-            else:
-                role = "assistant"
+            role = "assistant"
 
         blocks = []
 
-        for el in article.find_all([
+        container = article.find(attrs={"data-message-author-role": role})
+        if not container:
+            continue
+
+        for el in container.find_all([
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
             "img", "hr", "blockquote",
-            "table"
+            "table", "div"
         ]):
 
-            # -------- ЗАГОЛОВКИ --------
+            if el.name == "img" and el.get("src"):
+                src = el.get("src")
+                if not src.startswith("data:"):
+                    blocks.append(f"![]({download_image(src, page)})")
+                continue
+
             if el.name in ["h1", "h2", "h3", "h4"]:
                 level = int(el.name[1])
                 text = render_inline(el).strip()
                 blocks.append(f"{'#' * level} {text}")
                 continue
 
-            # -------- HR --------
             if el.name == "hr":
                 blocks.append("---")
                 continue
 
-            # -------- CODE BLOCK --------
             if el.name == "pre":
                 code_tag = el.find("code")
                 if not code_tag:
@@ -163,12 +185,6 @@ def extract_chat(page):
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
-            # -------- INLINE IMAGE --------
-            if el.name == "img" and el.get("src"):
-                blocks.append(f"![]({download_image(el['src'])})")
-                continue
-
-            # -------- TABLE --------
             if el.name == "table":
                 rows = []
                 for tr in el.find_all("tr"):
@@ -190,16 +206,13 @@ def extract_chat(page):
                         table_md.append("| " + " | ".join(row) + " |")
 
                     blocks.append("\n".join(table_md))
-
                 continue
 
-            # -------- BLOCKQUOTE --------
             if el.name == "blockquote":
                 text = render_inline(el).strip()
                 blocks.append(f"> {text}")
                 continue
 
-            # -------- LISTS --------
             if el.name in ("ul", "ol"):
                 is_ordered = el.name == "ol"
                 for i, li in enumerate(el.find_all("li", recursive=False), start=1):
@@ -209,17 +222,19 @@ def extract_chat(page):
                         blocks.append(f"{prefix} {text}")
                 continue
 
-            # -------- PARAGRAPH --------
             if el.name == "p":
-
-                # если внутри списка или blockquote — не обрабатываем отдельно
                 if el.find_parent(["li", "blockquote"]):
                     continue
-
                 text = render_inline(el).strip()
                 if text:
                     blocks.append(text)
                 continue
+
+        for img in container.find_all("img"):
+            src = img.get("src")
+            if not src or src.startswith("data:"):
+                continue
+            blocks.append(f"![]({download_image(src, page)})")
 
         if not blocks:
             continue
@@ -239,6 +254,20 @@ def extract_chat(page):
 
     return messages
 
+
+def render_block(container, page):
+    blocks = []
+
+    for el in container.children:
+
+        if getattr(el, "name", None) is None:
+            continue
+
+        if el.name == "img" and el.get("src"):
+            blocks.append(f"![]({download_image(el['src'], page)})")
+            continue
+
+    return blocks
 
 
 def format_md(messages, title, source_url):
@@ -293,7 +322,6 @@ def main():
             print("📥 Экспортируем...")
             title = get_chat_title(page)
 
-            # ⬇️ КРИТИЧНО: инициализация ДО парсинга
             global CURRENT_CHAT_SLUG, CURRENT_CACHE_DIR, DOWNLOADED_FILES
             DOWNLOADED_FILES = []
 
@@ -310,7 +338,6 @@ def main():
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(md_text)
 
-            # если ассетов нет — чистим всё дерево
             if not DOWNLOADED_FILES:
                 if os.path.exists(os.path.join(MD_DIR, "ChatGPT_0x")):
                     shutil.rmtree(os.path.join(MD_DIR, "ChatGPT_0x"))
