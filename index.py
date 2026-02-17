@@ -114,6 +114,73 @@ def render_inline(el):
 
     return ''.join(render_inline(c) for c in el.children)
 
+def detect_language(code: str) -> str:
+    c = code.strip()
+    cl = c.lower()
+
+    # Python
+    if "def " in cl or "import " in cl or "print(" in cl:
+        return "python"
+
+    # TypeScript
+    if "interface " in cl or ": string" in cl or ": number" in cl:
+        return "typescript"
+
+    # JavaScript
+    if "console.log" in cl or "function " in cl or "=>" in cl:
+        return "javascript"
+
+    # C++
+    if "#include" in cl and "std::" in cl:
+        return "cpp"
+
+    # C#
+    if "using system" in cl or "namespace " in cl:
+        return "csharp"
+
+    # Go
+    if "package main" in cl and "func main" in cl:
+        return "go"
+
+    # Rust
+    if "fn main()" in cl and "println!" in cl:
+        return "rust"
+
+    # Java
+    if "public class" in cl and "system.out.println" in cl:
+        return "java"
+
+    # HTML
+    if "<html" in cl or "<div" in cl or "<!doctype html" in cl:
+        return "html"
+
+    # CSS
+    if "{" in c and "}" in c and ":" in c and ";" in c:
+        if "color:" in cl or "margin:" in cl or "display:" in cl:
+            return "css"
+
+    # SQL
+    if "select " in cl or "insert into" in cl or "update " in cl:
+        return "sql"
+
+    # Bash
+    if cl.startswith("#!/bin/bash") or "echo " in cl:
+        return "bash"
+
+    # JSON
+    if c.startswith("{") and ":" in c and "\"" in c:
+        return "json"
+
+    # YAML
+    if ":" in c and "\n" in c and not "{" in c:
+        if re.search(r"^[a-zA-Z0-9_-]+:\s", c, re.MULTILINE):
+            return "yaml"
+
+    # Dockerfile
+    if cl.startswith("from ") and " as " in cl:
+        return "dockerfile"
+
+    return ""
 
 def extract_chat(page):
     soup = BeautifulSoup(page.content(), "html.parser")
@@ -121,7 +188,6 @@ def extract_chat(page):
     last_role = None
     buffer = []
 
-    # устойчивый селектор turn
     for article in soup.select("article[data-testid^='conversation-turn']"):
         role = article.get("data-turn")
         if role not in ["user", "assistant"]:
@@ -129,51 +195,43 @@ def extract_chat(page):
 
         blocks = []
 
-        # контейнер с реальным содержимым
         container = article.find(attrs={"data-message-author-role": role})
         if not container:
             continue
 
+        # ===== ТЕКСТОВАЯ ЧАСТЬ =====
         for el in container.find_all([
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
             "hr", "blockquote",
-            "table", "div", "button"
+            "table", "div"
         ]):
 
-            # -------- USER RAW PRE BLOCK --------
+            # RAW USER BLOCK
             if el.name == "div" and "whitespace-pre-wrap" in el.get("class", []):
-                raw_text = el.get_text()
-
-                # нормализуем Windows переносы
-                raw_text = raw_text.replace("\r\n", "\n")
-
-                # убираем только один возможный лишний перевод строки в конце
-                if raw_text.endswith("\n"):
-                    raw_text = raw_text[:-1]
-
+                raw_text = el.get_text().replace("\r\n", "\n").rstrip("\n")
                 blocks.append(f"```\n{raw_text}\n```")
                 continue
 
-            # -------- ЗАГОЛОВКИ --------
+            # HEADINGS
             if el.name in ["h1", "h2", "h3", "h4"]:
                 level = int(el.name[1])
                 text = render_inline(el).strip()
-                blocks.append(f"{'#' * level} {text}")
+                if text:
+                    blocks.append(f"{'#' * level} {text}")
                 continue
 
-            # -------- HR --------
+            # HR
             if el.name == "hr":
                 blocks.append("---")
                 continue
 
-            # -------- CODE BLOCK --------
+            # CODE BLOCK
             if el.name == "pre":
                 code_tag = el.find("code")
                 if not code_tag:
                     continue
 
-                # язык
                 lang = ""
                 for c in code_tag.get("class", []):
                     if c.startswith("language-"):
@@ -182,28 +240,16 @@ def extract_chat(page):
                 code = code_tag.get_text("", strip=False).rstrip("\n")
                 clean = code.strip()
 
-                # 🔥 Фильтр технических мусорных шаблонов ChatGPT
                 if re.fullmatch(r"(\\n)?\{[a-zA-Z_]+\}(\\n)?", clean):
                     continue
 
-                # Дополнительный фильтр конкретных служебных паттернов
-                if clean in (
-                        r"\n{raw_text}\n",
-                        r"{lang}\n{code}\n",
-                        r"{code}\n",
-                        r"{lang}\n{code}"
-                ):
-                    continue
+                if not lang:
+                    lang = detect_language(code)
 
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
-            # -------- IMAGE --------
-            # if el.name == "img" and el.get("src"):
-            #     blocks.append(f"![]({download_image(el['src'])})")
-            #     continue
-
-            # -------- TABLE --------
+            # TABLE
             if el.name == "table":
                 rows = []
                 for tr in el.find_all("tr"):
@@ -225,13 +271,14 @@ def extract_chat(page):
                     blocks.append("\n".join(table_md))
                 continue
 
-            # -------- BLOCKQUOTE --------
+            # BLOCKQUOTE
             if el.name == "blockquote":
                 text = render_inline(el).strip()
-                blocks.append(f"> {text}")
+                if text:
+                    blocks.append(f"> {text}")
                 continue
 
-            # -------- LISTS --------
+            # LIST
             if el.name in ("ul", "ol"):
                 is_ordered = el.name == "ol"
                 for i, li in enumerate(el.find_all("li", recursive=False), start=1):
@@ -241,7 +288,7 @@ def extract_chat(page):
                         blocks.append(f"{prefix} {text}")
                 continue
 
-            # -------- PARAGRAPH --------
+            # PARAGRAPH
             if el.name == "p":
                 if el.find_parent(["li", "blockquote"]):
                     continue
@@ -250,13 +297,17 @@ def extract_chat(page):
                     blocks.append(text)
                 continue
 
-        # ===== ДОБАВЛЯЕМ ВСЕ ИЗОБРАЖЕНИЯ (И ТВОИ И МОИ) =====
-        images = [
-            img.get("src") or img.get("data-src")
-            for img in article.find_all("img")
-        ]
+        # ===== ИЗОБРАЖЕНИЯ (через реальный DOM Playwright) =====
+        images = page.eval_on_selector_all(
+            "article[data-testid^='conversation-turn'] img",
+            "imgs => imgs.map(img => img.currentSrc || img.src)"
+        )
+
+        # убираем дубликаты
+        images = list(dict.fromkeys(images))
 
         for src in images:
+
             if not src or not src.startswith("http"):
                 continue
 
@@ -265,6 +316,7 @@ def extract_chat(page):
 
             DOWNLOADED_SRC.add(src)
             blocks.append(f"![[{download_image(src)}]]")
+
 
         if not blocks:
             continue
