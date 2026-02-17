@@ -134,18 +134,18 @@ def extract_chat(page):
             # -------- USER TEXT BLOCK (НЕ КОД) --------
             if el.name == "div" and "whitespace-pre-wrap" in el.get("class", []):
 
-                # если внутри есть настоящий <code> — пусть обработает блок ниже
+                # если внутри есть <code> — это не просто текст
                 if el.find("code"):
                     continue
 
                 raw_text = el.get_text()
-
                 raw_text = raw_text.replace("\r\n", "\n").strip()
 
                 if raw_text:
                     blocks.append(raw_text)
 
                 continue
+
                 raw_text = el.get_text()
 
                 # нормализуем Windows переносы
