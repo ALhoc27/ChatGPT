@@ -131,21 +131,8 @@ def extract_chat(page):
             "table", "div"
         ]):
 
-            # -------- USER TEXT BLOCK (НЕ КОД) --------
+            # -------- USER RAW PRE BLOCK --------
             if el.name == "div" and "whitespace-pre-wrap" in el.get("class", []):
-
-                # если внутри есть <code> — это не просто текст
-                if el.find("code"):
-                    continue
-
-                raw_text = el.get_text()
-                raw_text = raw_text.replace("\r\n", "\n").strip()
-
-                if raw_text:
-                    blocks.append(raw_text)
-
-                continue
-
                 raw_text = el.get_text()
 
                 # нормализуем Windows переносы
@@ -176,12 +163,18 @@ def extract_chat(page):
                 if not code_tag:
                     continue
 
+                # язык
                 lang = ""
                 for c in code_tag.get("class", []):
                     if c.startswith("language-"):
                         lang = c.replace("language-", "").lower()
 
-                code = code_tag.get_text("\n", strip=False).rstrip()
+                # 🔥 ВАЖНО: не вставляем разделители
+                code = code_tag.get_text("", strip=False)
+
+                # убираем ТОЛЬКО лишние переводы в конце
+                code = code.rstrip("\n")
+
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
 
@@ -351,7 +344,7 @@ def format_md(messages, title, source_url):
     ]
 
     for role, text in messages:
-        out.append("> [!note] You" if role == "user" else "## 🤖 ChatGPT")
+        out.append("## 🧑 You" if role == "user" else "## 🤖 ChatGPT")
         out.append("")
         out.append(text.strip())
         out.append("")
