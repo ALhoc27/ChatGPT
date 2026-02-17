@@ -52,7 +52,7 @@ def scroll_to_top(page):
 
 
 def download_image(src):
-    global CURRENT_CACHE_DIR, DOWNLOADED_FILES, CURRENT_CHAT_SLUG
+    global CURRENT_CACHE_DIR, DOWNLOADED_FILES, CURRENT_CHAT_SLUG, PLAYWRIGHT_CONTEXT
 
     if CURRENT_CACHE_DIR is None:
         return src
@@ -64,16 +64,23 @@ def download_image(src):
     path = os.path.join(CURRENT_CACHE_DIR, name)
 
     if not os.path.exists(path):
-        r = requests.get(src, timeout=30)
-        if r.status_code != 200:
-            print("❌ image download failed:", r.status_code)
-            return src
+        try:
+            # 🔥 скачиваем через авторизованный браузер
+            response = PLAYWRIGHT_CONTEXT.request.get(src, timeout=30000)
+            if not response.ok:
+                print("❌ image download failed:", response.status)
+                return src
 
-        with open(path, "wb") as f:
-            f.write(r.content)
+            with open(path, "wb") as f:
+                f.write(response.body())
+
+        except Exception as e:
+            print("❌ image download exception:", e)
+            return src
 
     DOWNLOADED_FILES.append(name)
     return f"./ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
+
 
 
 def render_inline(el):
@@ -129,7 +136,7 @@ def extract_chat(page):
         for el in container.find_all([
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
-            "img", "hr", "blockquote",
+            "hr", "blockquote",
             "table", "div", "button"
         ]):
 
@@ -242,10 +249,17 @@ def extract_chat(page):
                     blocks.append(text)
                 continue
 
-        # ===== ДОБАВЛЯЕМ ВСЕ ИЗОБРАЖЕНИЯ ОДИН РАЗ =====
-        for img in container.find_all("img"):
-            src = img.get("src", "").strip()
-            if src.startswith("http"):
+        # ===== ДОБАВЛЯЕМ ВСЕ ИЗОБРАЖЕНИЯ (И ТВОИ И МОИ) =====
+        images = page.eval_on_selector_all(
+            "article[data-testid^='conversation-turn'] img",
+            "imgs => imgs.map(img => img.currentSrc || img.src)"
+        )
+
+        # убираем дубликаты
+        images = list(dict.fromkeys(images))
+
+        for src in images:
+            if src and src.startswith("http"):
                 blocks.append(f"![[{download_image(src)}]]")
 
         if not blocks:
@@ -416,6 +430,13 @@ def main():
 
             scroll_to_top(page)
             scroll_for_images(page)
+            # ждём реальной загрузки изображений
+            # page.wait_for_function("""
+            #                        () => {
+            #                            const imgs = Array.from(document.querySelectorAll("article img"));
+            #                            return imgs.length > 0 && imgs.every(img => img.src && img.src.startsWith("http"));
+            #                        }
+            #                        """, timeout=15000)
 
             print("📥 Экспортируем...")
             title = get_chat_title(page)
