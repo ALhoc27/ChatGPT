@@ -14,7 +14,7 @@ import shutil
 
 # ================= НАСТРОЙКИ =================
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-CHROME_PROFILE = r"C:\chrome-debug"
+CHROME_USER_DATA = r"C:\Users\alex7\Documents\chrome-debug"
 WAIT_CHROME = 3
 
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))  # ChatGPT/
@@ -169,11 +169,21 @@ def extract_chat(page):
                     if c.startswith("language-"):
                         lang = c.replace("language-", "").lower()
 
-                # 🔥 ВАЖНО: не вставляем разделители
-                code = code_tag.get_text("", strip=False)
+                code = code_tag.get_text("", strip=False).rstrip("\n")
+                clean = code.strip()
 
-                # убираем ТОЛЬКО лишние переводы в конце
-                code = code.rstrip("\n")
+                # 🔥 Фильтр технических мусорных шаблонов ChatGPT
+                if re.fullmatch(r"(\\n)?\{[a-zA-Z_]+\}(\\n)?", clean):
+                    continue
+
+                # Дополнительный фильтр конкретных служебных паттернов
+                if clean in (
+                        r"\n{raw_text}\n",
+                        r"{lang}\n{code}\n",
+                        r"{code}\n",
+                        r"{lang}\n{code}"
+                ):
+                    continue
 
                 blocks.append(f"```{lang}\n{code}\n```")
                 continue
@@ -359,7 +369,7 @@ def main():
         CHROME_PATH,
         "--remote-debugging-port=9222",
         "--remote-debugging-address=127.0.0.1",
-        f"--user-data-dir={CHROME_PROFILE}"
+        f"--user-data-dir={CHROME_USER_DATA}"
     ])
 
     print(f"⏳ Ждем {WAIT_CHROME} секунд на запуск Chrome...")
@@ -369,7 +379,7 @@ def main():
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp("http://localhost:9222")
+            browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
             context = browser.contexts[0]
             page = context.new_page()
 
