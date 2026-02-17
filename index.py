@@ -190,8 +190,23 @@ def extract_chat(page):
 
             # -------- IMAGE --------
             if el.name == "img" and el.get("src"):
-                blocks.append(f"![]({download_image(el['src'])})")
+                src = el.get("src")
+
+                # игнорируем base64 и пустые ссылки
+                if not src.startswith("http"):
+                    continue
+
+                blocks.append(f"![]({download_image(src)})")
                 continue
+
+            # img может быть внутри button/div
+            if el.name in ["button", "div"]:
+                img = el.find("img")
+                if img and img.get("src"):
+                    src = img.get("src")
+                    if src.startswith("http"):
+                        blocks.append(f"![]({download_image(src)})")
+                        continue
 
             # -------- TABLE --------
             if el.name == "table":
@@ -281,7 +296,9 @@ def render_block(container):
 
         # IMAGE
         if el.name == "img" and el.get("src"):
-            blocks.append(f"![]({download_image(el['src'])})")
+            src = el.get("src")
+            if src.startswith("http"):
+                blocks.append(f"![]({download_image(src)})")
             continue
 
         # LIST
