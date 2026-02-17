@@ -57,7 +57,6 @@ def download_image(src):
     if CURRENT_CACHE_DIR is None:
         return src
 
-    # гарантируем существование папок ТОЛЬКО при реальной загрузке
     os.makedirs(CURRENT_CACHE_DIR, exist_ok=True)
 
     ext = os.path.splitext(urlparse(src).path)[1] or ".png"
@@ -65,13 +64,16 @@ def download_image(src):
     path = os.path.join(CURRENT_CACHE_DIR, name)
 
     if not os.path.exists(path):
-        r = requests.get(src, timeout=20)
-        r.raise_for_status()
+        r = requests.get(src, timeout=30)
+        if r.status_code != 200:
+            print("❌ image download failed:", r.status_code)
+            return src
+
         with open(path, "wb") as f:
             f.write(r.content)
 
     DOWNLOADED_FILES.append(name)
-    return f"ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
+    return f"./ChatGPT_0x/Cach/{CURRENT_CHAT_SLUG}/{name}"
 
 
 def render_inline(el):
@@ -128,7 +130,7 @@ def extract_chat(page):
             "h1", "h2", "h3", "h4",
             "p", "pre", "ul", "ol",
             "img", "hr", "blockquote",
-            "table", "div"
+            "table", "div", "button"
         ]):
 
             # -------- USER RAW PRE BLOCK --------
@@ -189,24 +191,9 @@ def extract_chat(page):
                 continue
 
             # -------- IMAGE --------
-            if el.name == "img" and el.get("src"):
-                src = el.get("src")
-
-                # игнорируем base64 и пустые ссылки
-                if not src.startswith("http"):
-                    continue
-
-                blocks.append(f"![]({download_image(src)})")
-                continue
-
-            # img может быть внутри button/div
-            if el.name in ["button", "div"]:
-                img = el.find("img")
-                if img and img.get("src"):
-                    src = img.get("src")
-                    if src.startswith("http"):
-                        blocks.append(f"![]({download_image(src)})")
-                        continue
+            # if el.name == "img" and el.get("src"):
+            #     blocks.append(f"![]({download_image(el['src'])})")
+            #     continue
 
             # -------- TABLE --------
             if el.name == "table":
@@ -255,6 +242,12 @@ def extract_chat(page):
                     blocks.append(text)
                 continue
 
+        # ===== ДОБАВЛЯЕМ ВСЕ ИЗОБРАЖЕНИЯ ОДИН РАЗ =====
+        for img in container.find_all("img"):
+            src = img.get("src", "").strip()
+            if src.startswith("http"):
+                blocks.append(f"![[{download_image(src)}]]")
+
         if not blocks:
             continue
 
@@ -296,7 +289,7 @@ def render_block(container):
 
         # IMAGE
         if el.name == "img" and el.get("src"):
-            src = el.get("src")
+            src = el.get("src", "").strip()
             if src.startswith("http"):
                 blocks.append(f"![]({download_image(src)})")
             continue
@@ -378,6 +371,19 @@ def format_md(messages, title, source_url):
 
     return "\n".join(out).strip()
 
+def scroll_for_images(page):
+    last_height = 0
+
+    while True:
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(1)
+
+        new_height = page.evaluate("document.body.scrollHeight")
+        if new_height == last_height:
+            break
+
+        last_height = new_height
+
 
 def main():
     print("🚀 Запускаем Chrome с удаленной отладкой...")
@@ -400,12 +406,16 @@ def main():
             context = browser.contexts[0]
             page = context.new_page()
 
+            global PLAYWRIGHT_CONTEXT
+            PLAYWRIGHT_CONTEXT = context
+
             chat_url = get_chat_url()
             print("🌐 Открываем чат...")
             page.goto(chat_url, wait_until="domcontentloaded")
             time.sleep(3)  # даём React догрузиться
 
             scroll_to_top(page)
+            scroll_for_images(page)
 
             print("📥 Экспортируем...")
             title = get_chat_title(page)
