@@ -20,6 +20,7 @@ WAIT_CHROME = 3
 ROOT_DIR = os.path.abspath(os.path.dirname(__file__))  # ChatGPT/
 MD_DIR = ROOT_DIR
 ASSETS_ROOT = os.path.join(MD_DIR, "ChatGPT_0x", "Cach")
+DOWNLOADED_SRC = set()
 
 # runtime
 CURRENT_CHAT_SLUG = None
@@ -250,17 +251,20 @@ def extract_chat(page):
                 continue
 
         # ===== ДОБАВЛЯЕМ ВСЕ ИЗОБРАЖЕНИЯ (И ТВОИ И МОИ) =====
-        images = page.eval_on_selector_all(
-            "article[data-testid^='conversation-turn'] img",
-            "imgs => imgs.map(img => img.currentSrc || img.src)"
-        )
-
-        # убираем дубликаты
-        images = list(dict.fromkeys(images))
+        images = [
+            img.get("src") or img.get("data-src")
+            for img in article.find_all("img")
+        ]
 
         for src in images:
-            if src and src.startswith("http"):
-                blocks.append(f"![[{download_image(src)}]]")
+            if not src or not src.startswith("http"):
+                continue
+
+            if src in DOWNLOADED_SRC:
+                continue
+
+            DOWNLOADED_SRC.add(src)
+            blocks.append(f"![[{download_image(src)}]]")
 
         if not blocks:
             continue
@@ -433,13 +437,6 @@ def main():
 
             scroll_to_top(page)
             scroll_for_images(page)
-            # ждём реальной загрузки изображений
-            # page.wait_for_function("""
-            #                        () => {
-            #                            const imgs = Array.from(document.querySelectorAll("article img"));
-            #                            return imgs.length > 0 && imgs.every(img => img.src && img.src.startsWith("http"));
-            #                        }
-            #                        """, timeout=15000)
 
             print("📥 Экспортируем...")
             title = get_chat_title(page)
